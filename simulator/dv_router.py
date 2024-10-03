@@ -78,6 +78,27 @@ class DVRouter(DVRouterBase):
 
         ##### Begin Stage 1 #####
 
+        # da tabelle immutable setzten wir eine neue auf
+        # dafür benötigen wir: "dst", "port", "latency", "expire_time"
+
+        # get latency and set expiretime 
+        latency = self.ports.get_latency(port)
+        expire_time = FOREVER
+
+        # neue TabellenEntry
+        new_entry = TableEntry(dst=host, port=port, latency=latency, expire_time=expire_time)
+        # neue Tabelle
+        new_table = Table()
+
+        # Werte für "schlüssel" im dictionary hinzufügen
+        for dst, entry in self.table.items():
+            new_table[dst] = entry  # Kopieren der Einträge
+
+        # Füge die neue statische Route hinzu.
+        new_table[host] = new_entry
+
+        # Setze die neue Tabelle als aktuelle Tabelle.
+        self.table = new_table
         ##### End Stage 1 #####
 
     def handle_data_packet(self, packet, in_port):
