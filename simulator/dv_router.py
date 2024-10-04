@@ -59,6 +59,9 @@ class DVRouter(DVRouterBase):
 
         ##### Begin Stage 10A #####
 
+        # Neue Datenstruktur: Speichern der letzten gesendeten Routen
+        self.history = {}  # Struktur: {port: {dst: latency}}
+
         ##### End Stage 10A #####
 
     def add_static_route(self, host, port):
@@ -147,27 +150,45 @@ class DVRouter(DVRouterBase):
         ##### Begin Stages 3, 6, 7, 8, 10 #####
 
         for port in self.ports.get_all_ports():
+                if single_port is not None and port != single_port:
+                    continue  # Nur den spezifischen Port behandeln, wenn single_port gesetzt ist
 
-            #hier check die latencies
+                # Verarbeite jede Route
+                for dst, entry in self.table.items():
+                    
+                    # Split Horizon
+                    if self.SPLIT_HORIZON and entry.port == port:
+                        continue  # Überspringe
 
-            for dst, entry in self.table.items():
-                
-                # Split Horizon
-                if self.SPLIT_HORIZON and entry.port == port:
-                    continue  # Skip 
-
-                # Poison Reverse
-                if self.POISON_REVERSE and entry.port == port:
-                    # Send route with latency INFINITY
-                    self.send_route(port, dst, INFINITY)
-                else:
-                    # Send normal route
-                    advertised_latency = min(entry.latency, INFINITY)
-
-                    # Send the route to the neighbor with the adjusted latency
-                    self.send_route(port, dst, advertised_latency)
+                    # Poison Reverse
+                    if self.POISON_REVERSE and entry.port == port:
+                        self.send_route_if_needed(port, dst, INFINITY, force)
+                    else:
+                        advertised_latency = min(entry.latency, INFINITY)
+                        self.send_route_if_needed(port, dst, advertised_latency, force)
 
         ##### End Stages 3, 6, 7, 8, 10 #####
+
+    ####################
+    ## START Helpers  ##
+    ####################
+    def send_route_if_needed(self, port, dst, latency, force):
+        """
+        Helper method to send route if it hasn't been sent before or if the
+        latency has changed. Also updates the history.
+        """
+        if port not in self.history:
+            self.history[port] = {}
+        
+        if force or self.history[port].get(dst) != latency:
+            self.send_route(port, dst, latency)
+            self.history[port][dst] = latency
+
+    ####################
+    ##  END Helpers   ##
+    ####################
+
+
 
     def expire_routes(self):
         """
@@ -230,23 +251,23 @@ class DVRouter(DVRouterBase):
         # Check / Get entry for specific dest
         entry_for_dest = self.table.get(route_dst, None)
 
-        # rule 1: wenn route_dst nicht in meiner Tabelle update
+        # Regel 1: Wenn das Ziel nicht in der Tabelle ist, füge es hinzu
         if entry_for_dest is None:
             new_entry = TableEntry(dst=route_dst, port=port, latency=total_latency, expire_time=api.current_time() + self.ROUTE_TTL)
             self.table[route_dst] = new_entry
-            return
-            
-        # Regel 2: Wenn die Route von unserem aktuellen Next-Hop kommt, immer akzeptieren
+
+        # Regel 2: Wenn die Route vom aktuellen Next-Hop kommt, immer akzeptieren
         elif entry_for_dest.port == port:
             new_entry = TableEntry(dst=route_dst, port=port, latency=total_latency, expire_time=api.current_time() + self.ROUTE_TTL)
             self.table[route_dst] = new_entry
-            return
 
         # Regel 3: Wenn Route über anderen Port kommt, nur akzeptieren, wenn sie besser ist
         elif total_latency < entry_for_dest.latency:
             new_entry = TableEntry(dst=route_dst, port=port, latency=total_latency, expire_time=api.current_time() + self.ROUTE_TTL)
             self.table[route_dst] = new_entry
-            return
+
+        # Sende die aktualisierten Routen (force=False)
+        self.send_routes(force=False)
 
         ##### End Stages 4, 10 #####
 
@@ -262,6 +283,14 @@ class DVRouter(DVRouterBase):
 
         ##### Begin Stage 10B #####
 
+        # Füge den neuen Port hinzu
+        self.ports.add_port(port, latency)
+
+        # Sende sofort Routen, falls self.SEND_ON_LINK_UP aktiviert ist
+        if self.SEND_ON_LINK_UP:
+            # Sende alle Routen nur an den neuen Port
+            self.send_routes(single_port=port)
+
         ##### End Stage 10B #####
 
     def handle_link_down(self, port):
@@ -271,9 +300,35 @@ class DVRouter(DVRouterBase):
         :param port: the port number used by the link.
         :returns: nothing.
         """
-        self.ports.remove_port(port)
+        if port in self.ports.get_all_ports():
+            self.ports.remove_port(port)
+        else:
+            # Optional: Log-Meldung, um darauf hinzuweisen, dass der Port bereits entfernt wurde
+            self.s_log(f"Port {port} does not exist.")
 
-        ##### Begin Stage 10B #####
+        # Liste der Ziele, deren Routen über diesen Port gehen
+        routes_to_update = []
+
+        # Iteriere über die Tabelle, um betroffene Routen zu finden
+        for dst, entry in self.table.items():
+            if entry.port == port:
+                routes_to_update.append(dst)
+
+        if self.POISON_ON_LINK_DOWN:
+            # Poison: Setze die betroffenen Routen auf INFINITY
+            for dst in routes_to_update:
+                new_entry = TableEntry(dst=dst, port=port, latency=INFINITY, expire_time=api.current_time() + self.ROUTE_TTL)
+                self.table[dst] = new_entry
+            
+            # Sofort alle Nachbarn über die Poisoned Routes informieren
+            self.send_routes(force=True)
+        else:
+            # Lösche die betroffenen Routen
+            for dst in routes_to_update:
+                self.table.pop(dst)
+
+            # Optional: Log-Nachricht für entfernte Routen
+            self.s_log(f"Routes via port {port} have been removed.")
 
         ##### End Stage 10B #####
 
