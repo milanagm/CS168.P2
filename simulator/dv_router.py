@@ -165,6 +165,21 @@ class DVRouter(DVRouterBase):
         
         ##### Begin Stages 5, 9 #####
 
+        # Hole die aktuelle Zeit
+        current_time = api.current_time()
+    
+        expired_routes = []
+        
+        for dest, entry in self.table.items():
+            if entry.expire_time <= current_time:
+                expired_routes.append(dest)
+        
+        # Löschen
+        for dest in expired_routes:
+            self.table.pop(dest)
+            # Optional: Log-Nachricht für abgelaufene Routen
+            self.s_log(f"Route to {dest} has expired and is removed.")
+                
         ##### End Stages 5, 9 #####
 
     def handle_route_advertisement(self, route_dst, route_latency, port):
