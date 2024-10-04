@@ -179,7 +179,29 @@ class DVRouter(DVRouterBase):
         
         ##### Begin Stages 4, 10 #####
 
-        
+         # Berechne die Gesamtlatenz (Latenz des Ports + beworbene Latenz)
+        total_latency = self.ports.get_latency(port) + route_latency
+
+        # Check / Get entry for specific dest
+        entry_for_dest = self.table.get(route_dst, None)
+
+        # rule 1: wenn route_dst nicht in meiner Tabelle update
+        if entry_for_dest is None:
+            new_entry = TableEntry(dst=route_dst, port=port, latency=total_latency, expire_time=api.current_time() + self.ROUTE_TTL)
+            self.table[route_dst] = new_entry
+            return
+            
+        # Regel 2: Wenn die Route von unserem aktuellen Next-Hop kommt, immer akzeptieren
+        elif entry_for_dest.port == port:
+            new_entry = TableEntry(dst=route_dst, port=port, latency=total_latency, expire_time=api.current_time() + self.ROUTE_TTL)
+            self.table[route_dst] = new_entry
+            return
+
+        # Regel 3: Wenn Route über anderen Port kommt, nur akzeptieren, wenn sie besser ist
+        elif total_latency < entry_for_dest.latency:
+            new_entry = TableEntry(dst=route_dst, port=port, latency=total_latency, expire_time=api.current_time() + self.ROUTE_TTL)
+            self.table[route_dst] = new_entry
+            return
 
         ##### End Stages 4, 10 #####
 
