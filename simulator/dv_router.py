@@ -148,14 +148,24 @@ class DVRouter(DVRouterBase):
 
         for port in self.ports.get_all_ports():
 
+            #hier check die latencies
+
             for dst, entry in self.table.items():
                 
-                if self.SPLIT_HORIZON:
+                # Split Horizon
+                if self.SPLIT_HORIZON and entry.port == port:
+                    continue  # Skip 
 
-                    if entry.port == port:
-                        continue  # Skip this route if it was the one we got the packet from
-            
-                self.send_route(port, dst, entry.latency)    # the actual send
+                # Poison Reverse
+                if self.POISON_REVERSE and entry.port == port:
+                    # Send route with latency INFINITY
+                    self.send_route(port, dst, INFINITY)
+                else:
+                    # Send normal route
+                    advertised_latency = min(entry.latency, INFINITY)
+
+                    # Send the route to the neighbor with the adjusted latency
+                    self.send_route(port, dst, advertised_latency)
 
         ##### End Stages 3, 6, 7, 8, 10 #####
 
