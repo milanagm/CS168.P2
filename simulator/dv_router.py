@@ -186,11 +186,29 @@ class DVRouter(DVRouterBase):
             if entry.expire_time <= current_time:
                 expired_routes.append(dest)
         
+        # auf unendlich setzten
+        if self.POISON_EXPIRED:
+            for dest in expired_routes:
+
+                new_entry = TableEntry(
+                    dst=dest,
+                    port=entry.port,  
+                    latency=INFINITY,  
+                    expire_time=current_time + self.ROUTE_TTL  
+                )
+
+                self.table[dest] = new_entry  # Ersetzen d. alten Eintrags
+
+                # Log-Nachricht für Poisoned Route
+                self.s_log(f"Route to {dest} has expired and is replaced with poison (INFINITY).")
+
         # Löschen
-        for dest in expired_routes:
-            self.table.pop(dest)
-            # Optional: Log-Nachricht für abgelaufene Routen
-            self.s_log(f"Route to {dest} has expired and is removed.")
+        else:
+            for dest in expired_routes:
+                self.table.pop(dest)
+
+                # Log-Nachricht für abgelaufene Routen
+                self.s_log(f"Route to {dest} has expired and is removed.")
                 
         ##### End Stages 5, 9 #####
 
