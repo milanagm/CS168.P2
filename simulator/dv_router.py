@@ -114,6 +114,22 @@ class DVRouter(DVRouterBase):
         
         ##### Begin Stage 2 #####
 
+        ### check ob destination vorhanden
+        dest = packet.dst
+        entry = self.table.get(dest, None)  # wenn nichts gefunden wird return NONE
+        
+        # If no route destination: drop the packet (do nothing)
+        if entry is None:
+            return
+        
+        ### Check the latency for the outgoing port
+        # If the route is valid, forward the packet to the correct port
+        if entry.latency >= INFINITY:
+            return
+        
+        # actual forwarding of the packet to the correct port
+        self.send(packet, port = entry.port) #oder: self.send(packet, port = in_port)
+
         ##### End Stage 2 #####
 
     def send_routes(self, force=False, single_port=None):
