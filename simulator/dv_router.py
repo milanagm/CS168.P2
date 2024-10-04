@@ -146,14 +146,16 @@ class DVRouter(DVRouterBase):
         
         ##### Begin Stages 3, 6, 7, 8, 10 #####
 
-        # Iterate over all ports that are connected to neighbors
         for port in self.ports.get_all_ports():
-        
-            # Iterate over all destinations in the routing table
+
             for dst, entry in self.table.items():
                 
-                # Send the route to the neighbor on this port
-                self.send_route(port, dst, entry.latency)
+                if self.SPLIT_HORIZON:
+
+                    if entry.port == port:
+                        continue  # Skip this route if it was the one we got the packet from
+            
+                self.send_route(port, dst, entry.latency)    # the actual send
 
         ##### End Stages 3, 6, 7, 8, 10 #####
 
