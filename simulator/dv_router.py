@@ -146,6 +146,15 @@ class DVRouter(DVRouterBase):
         
         ##### Begin Stages 3, 6, 7, 8, 10 #####
 
+        # Iterate over all ports that are connected to neighbors
+        for port in self.ports.get_all_ports():
+        
+            # Iterate over all destinations in the routing table
+            for dst, entry in self.table.items():
+                
+                # Send the route to the neighbor on this port
+                self.send_route(port, dst, entry.latency)
+
         ##### End Stages 3, 6, 7, 8, 10 #####
 
     def expire_routes(self):
@@ -169,6 +178,8 @@ class DVRouter(DVRouterBase):
         """
         
         ##### Begin Stages 4, 10 #####
+
+        
 
         ##### End Stages 4, 10 #####
 
